@@ -36,7 +36,7 @@ void setup() {
     rtc.setControl(0b00000000 , 0b00000000);
 
     // initialize external interrupt on button pin A0 (PCINT8) + clock pin A3 (PCINT11)
-    PCMSK1 |= (1 << PCINT8) ;//| (1 << PCINT11);
+    PCMSK1 |= (1 << PCINT8) | (1 << PCINT11);
     PCICR  |= 1 << PCIE1;
 
     pinMode(13, OUTPUT);
@@ -61,10 +61,14 @@ char *appendChar(char* dst, char src) {
 
 void displayTime(TimeStruct *time, byte offset, byte maxLen) {
     char str[9], *ptr = str;
-    if (time->hours > 10) {
-        ptr = appendChar(ptr, '0' + time->hours / 10);
+    byte h12 = time->hours;
+    if (h12 > 12) {
+        h12 -= 12;
     }
-    ptr = appendChar(ptr, '0' + time->hours % 10);
+    if (h12 >= 10) {
+        ptr = appendChar(ptr, '0' + h12 / 10);
+    }
+    ptr = appendChar(ptr, '0' + h12 % 10);
     ptr = appendChar(ptr, ':');
     ptr = appendChar(ptr, '0' + time->minutes / 10);
     ptr = appendChar(ptr, '0' + time->minutes % 10);
@@ -86,7 +90,7 @@ void displayDate(TimeStruct *time, byte offset, byte maxLen) {
     char str[16], *ptr = str;
     ptr = appendStr(ptr, shortDays[time->dayOfWeek]);
     ptr = appendChar(ptr, ' ');
-    if (time->dayOfMonth > 10) {
+    if (time->dayOfMonth >= 10) {
         ptr = appendChar(ptr, '0' + time->dayOfMonth / 10);
     }
     ptr = appendChar(ptr, '0' + time->dayOfMonth % 10);
@@ -150,42 +154,45 @@ void updateDisplay() {
         ptr = appendChar(ptr, 0);
         ledMatrix.drawString(33, str);
 
+        Serial.print("state ");Serial.println(state);
         ptr = str;
-        switch(state) {
-            case ST_SET_YEAR:
-                ptr = appendStr(ptr, "20");
-                ptr = appendChar(ptr, '0' + time.year / 10);
-                ptr = appendChar(ptr, '0' + time.year % 10);
-            break;
-            case ST_SET_MONTH:
-                ptr = appendStr(ptr, shortMonthes[time.month]);
-            break;
-            case ST_SET_DAY_OF_WEEK:
-                ptr = appendStr(ptr, shortDays[time.dayOfWeek]);
-            break;
-            case ST_SET_DAY:
-                if (time.dayOfMonth > 10) {
-                    ptr = appendChar(ptr, '0' + time.dayOfMonth / 10);
-                }
-                ptr = appendChar(ptr, '0' + time.dayOfMonth % 10);
-            break;
-            case ST_SET_HOUR:
-                if (time.hours > 10) {
-                    ptr = appendChar(ptr, '0' + time.hours / 10);
-                }
-                ptr = appendChar(ptr, '0' + time.hours % 10);
-            break;
-            case ST_SET_MINUTES:
-                ptr = appendChar(ptr, '0' + time.minutes / 10);
-                ptr = appendChar(ptr, '0' + time.minutes % 10);
-            break;
-            case ST_SET_SECONDS:
-                ptr = appendChar(ptr, '0' + time.seconds / 10);
-                ptr = appendChar(ptr, '0' + time.seconds % 10);
-            break;
+        if (state == ST_SET_YEAR) {
+            ptr = appendStr(ptr, "20");
+            ptr = appendChar(ptr, '0' + time.year / 10);
+            ptr = appendChar(ptr, '0' + time.year % 10);
+        } else if (state == ST_SET_MONTH) {
+            ptr = appendStr(ptr, shortMonthes[time.month]);
+        } else if (state == ST_SET_DAY_OF_WEEK) {
+            ptr = appendStr(ptr, shortDays[time.dayOfWeek]);
+        } else if (state == ST_SET_DAY) {
+            if (time.dayOfMonth >= 10) {
+                ptr = appendChar(ptr, '0' + time.dayOfMonth / 10);
+            }
+            ptr = appendChar(ptr, '0' + time.dayOfMonth % 10);
+        } else if (state == ST_SET_HOUR) {
+            byte h12 = time.hours;
+            char suffix = 'a';
+            if (h12 > 12) {
+                h12 -= 12;
+                suffix = 'p';
+            }
+            if (h12 >= 10) {
+                ptr = appendChar(ptr, '0' + h12 / 10);
+            }
+            ptr = appendChar(ptr, '0' + h12 % 10);
+            ptr = appendChar(ptr, suffix);
+            ptr = appendChar(ptr, 'm');
+        } else if (state == ST_SET_MINUTES) {
+            Serial.println(time.minutes);
+            ptr = appendChar(ptr, '0' + time.minutes / 10);
+            ptr = appendChar(ptr, '0' + time.minutes % 10);
+        } else if (state == ST_SET_SECONDS) {
+            Serial.println(time.seconds);
+            ptr = appendChar(ptr, '0' + time.seconds / 10);
+            ptr = appendChar(ptr, '0' + time.seconds % 10);
         }
         ptr = appendChar(ptr, 0);
-        ledMatrix.drawString(0, str);
+        ledMatrix.drawString(1, str);
     }
 
     // debug buttons by displaying a pixel in the corner
@@ -233,60 +240,55 @@ bool changeValue(byte *value, short delta, short min, short max, bool cycle = 1)
 
 void handleState(short delta) {
     byte value;
-    switch (state) {
-        case ST_DISPLAY:
-            // change intensity
-            if (changeValue(&intensity, delta, 0, 7, 0)) {
-                ledMatrix.setIntensity(intensity);
-            }
-        break;
-        TODO : BCD conversions ! ! !
-        case ST_SET_YEAR:
-            value = rtc.registerRead(DS3231_REG_Year);
-            if (changeValue(&value, delta, 0, 99)) {
-                rtc.registerWrite(DS3231_REG_Year, value);
-            }
-        break;
-        case ST_SET_MONTH:
-            value = rtc.registerRead(DS3231_REG_Month) && 0x7F;
-            if (changeValue(&value, delta, 1, 12)) {
-                rtc.registerWrite(DS3231_REG_Month, value);
-            }
-        break;
-        case ST_SET_DAY_OF_WEEK:
-            value = rtc.registerRead(DS3231_REG_Day);
-            if (changeValue(&value, delta, 1, 7)) {
-                rtc.registerWrite(DS3231_REG_Day, value);
-            }
-        break;
-        case ST_SET_DAY:
-            // TODO
-            byte month = rtc.registerRead(DS3231_REG_Month) && 0x7F;
-            byte year  = rtc.registerRead(DS3231_REG_Year);
-            byte lastDay = lastDayOfMonth(month, year);
-            value = rtc.registerRead(DS3231_REG_Date);
-            if (changeValue(&value, delta, 1, lastDay)) {
-                rtc.registerWrite(DS3231_REG_Date, value);
-            }
-        break;
-        case ST_SET_HOUR:
-            value = rtc.registerRead(DS3231_REG_Hours);
-            if (changeValue(&value, delta, 0, 60)) {
-                rtc.registerWrite(DS3231_REG_Hours, value);
-            }
-        break;
-        case ST_SET_MINUTES:
-            value = rtc.registerRead(DS3231_REG_Minutes);
-            if (changeValue(&value, delta, 0, 60)) {
-                rtc.registerWrite(DS3231_REG_Minutes, value);
-            }
-        break;
-        case ST_SET_SECONDS:
-            value = rtc.registerRead(DS3231_REG_Seconds);
-            if (changeValue(&value, delta, 0, 60)) {
-                rtc.registerWrite(DS3231_REG_Seconds, value);
-            }
-        break;
+    if (state == ST_DISPLAY) {
+        // change intensity
+        if (changeValue(&intensity, delta, 0, 7, 0)) {
+            ledMatrix.setIntensity(intensity);
+        }
+    } else if (state == ST_SET_YEAR) {
+        value = rtc.bcdToDec(rtc.registerRead(DS3231_REG_Year));
+        if (changeValue(&value, delta, 0, 99)) {
+            rtc.registerWrite(DS3231_REG_Year, rtc.decToBcd(value));
+        }
+    } else if (state == ST_SET_MONTH) {
+        value = rtc.bcdToDec(rtc.registerRead(DS3231_REG_Month) & 0x7F);
+        if (changeValue(&value, delta, 1, 12)) {
+            rtc.registerWrite(DS3231_REG_Month, rtc.decToBcd(value));
+        }
+    } else if (state == ST_SET_DAY_OF_WEEK) {
+        value = rtc.registerRead(DS3231_REG_Day);
+        if (changeValue(&value, delta, 1, 7)) {
+            rtc.registerWrite(DS3231_REG_Day, value);
+        }
+    } else if (state == ST_SET_DAY) {
+        // TODO
+        byte month = rtc.bcdToDec(rtc.registerRead(DS3231_REG_Month) & 0x1F);
+        byte year  = rtc.bcdToDec(rtc.registerRead(DS3231_REG_Year));
+        byte lastDay = lastDayOfMonth(month, year);
+        value = rtc.bcdToDec(rtc.registerRead(DS3231_REG_Date));
+        if (changeValue(&value, delta, 1, lastDay)) {
+            rtc.registerWrite(DS3231_REG_Date, rtc.decToBcd(value));
+        }
+    } else if (state == ST_SET_HOUR) {
+        Serial.print("read ");
+        value = rtc.bcdToDec(rtc.registerRead(DS3231_REG_Hours) & 0x3F);
+        Serial.print(value);
+        if (changeValue(&value, delta, 0, 23)) {
+            rtc.registerWrite(DS3231_REG_Hours, rtc.decToBcd(value));
+        }
+    } else if (state == ST_SET_MINUTES) {
+        Serial.print("read ");
+        value = rtc.bcdToDec(rtc.registerRead(DS3231_REG_Minutes));
+        Serial.print(value);
+        if (changeValue(&value, delta, 0, 59)) {
+            Serial.print("write "); Serial.print(value);
+            rtc.registerWrite(DS3231_REG_Minutes, rtc.decToBcd(value));
+        }
+    } else if (state == ST_SET_SECONDS) {
+        value = rtc.bcdToDec(rtc.registerRead(DS3231_REG_Seconds));
+        if (changeValue(&value, delta, 0, 59)) {
+            rtc.registerWrite(DS3231_REG_Seconds, rtc.decToBcd(value));
+        }
     }
 }
 
