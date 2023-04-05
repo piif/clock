@@ -35,13 +35,16 @@ void setup() {
     /* DS3231 outputs nothing but continues counting when on battery */
     rtc.setControl(0b00000000 , 0b00000000);
 
-    // initialize external interrupt on button pin A0 (PCINT8) + clock pin A3 (PCINT11)
-    PCMSK1 |= (1 << PCINT8) | (1 << PCINT11);
+    // initialize external interrupt on button pin A0 (PCINT8)
+    PCMSK1 |= (1 << PCINT8);
     PCICR  |= 1 << PCIE1;
 
-    pinMode(13, OUTPUT);
-    // ledMatrix.setup();
-    pinMode(BUTTONS_PIN, INPUT);
+    // timer 1 : WGM 4 = CTC , prescale 3 = /64
+    TCCR1A = 0;
+    TCCR1B = (1 << WGM12) | (1 << CS11) |(1 << CS10);
+    TCCR1C = 0;
+    TIMSK1 = 1 << OCIE1A;
+    OCR1A = 15625;
 
 #ifdef HAVE_SERIAL
     Serial.println("Setup OK");
@@ -154,7 +157,6 @@ void updateDisplay() {
         ptr = appendChar(ptr, 0);
         ledMatrix.drawString(33, str);
 
-        Serial.print("state ");Serial.println(state);
         ptr = str;
         if (state == ST_SET_YEAR) {
             ptr = appendStr(ptr, "20");
@@ -183,11 +185,9 @@ void updateDisplay() {
             ptr = appendChar(ptr, suffix);
             ptr = appendChar(ptr, 'm');
         } else if (state == ST_SET_MINUTES) {
-            Serial.println(time.minutes);
             ptr = appendChar(ptr, '0' + time.minutes / 10);
             ptr = appendChar(ptr, '0' + time.minutes % 10);
         } else if (state == ST_SET_SECONDS) {
-            Serial.println(time.seconds);
             ptr = appendChar(ptr, '0' + time.seconds / 10);
             ptr = appendChar(ptr, '0' + time.seconds % 10);
         }
@@ -261,7 +261,6 @@ void handleState(short delta) {
             rtc.registerWrite(DS3231_REG_Day, value);
         }
     } else if (state == ST_SET_DAY) {
-        // TODO
         byte month = rtc.bcdToDec(rtc.registerRead(DS3231_REG_Month) & 0x1F);
         byte year  = rtc.bcdToDec(rtc.registerRead(DS3231_REG_Year));
         byte lastDay = lastDayOfMonth(month, year);
@@ -270,18 +269,13 @@ void handleState(short delta) {
             rtc.registerWrite(DS3231_REG_Date, rtc.decToBcd(value));
         }
     } else if (state == ST_SET_HOUR) {
-        Serial.print("read ");
         value = rtc.bcdToDec(rtc.registerRead(DS3231_REG_Hours) & 0x3F);
-        Serial.print(value);
         if (changeValue(&value, delta, 0, 23)) {
             rtc.registerWrite(DS3231_REG_Hours, rtc.decToBcd(value));
         }
     } else if (state == ST_SET_MINUTES) {
-        Serial.print("read ");
         value = rtc.bcdToDec(rtc.registerRead(DS3231_REG_Minutes));
-        Serial.print(value);
         if (changeValue(&value, delta, 0, 59)) {
-            Serial.print("write "); Serial.print(value);
             rtc.registerWrite(DS3231_REG_Minutes, rtc.decToBcd(value));
         }
     } else if (state == ST_SET_SECONDS) {
@@ -325,9 +319,10 @@ volatile bool clockTick = 0;
 volatile bool buttonChange = 0;
 
 ISR(PCINT1_vect) {
-    clockTick = !digitalRead(DS_SQW);
     buttonChange = 1;
-    digitalWrite(13, 1);
+}
+ISR(TIMER1_COMPA_vect) {
+    clockTick = 1;
 }
 
 unsigned long counter = 0;
@@ -338,11 +333,13 @@ void loop() {
 
     if (buttonChange) {
         buttonChange = 0;
-        delay(100);
+        unsigned int timer2 = TCNT1 + 1562;
+        if (timer2 > 15625) {
+            timer2 -= 15625;
+        }
+        while(TCNT1 < timer2); // wait 1562 ticks = 100ms
         byte newButton = buttons.read();
-        if (newButton == NO_BUTTON_CHANGE) {
-            digitalWrite(13, 0);
-        } else {
+        if (newButton != NO_BUTTON_CHANGE) {
             handleButton(newButton);
             needUpdate = 1;
         }
@@ -357,6 +354,5 @@ void loop() {
 //         Serial.print(" t "); Serial.print(clockTick); Serial.print(buttonChange); Serial.println(button);
 // #endif
         updateDisplay();
-        digitalWrite(13, 0);
     }
 }
