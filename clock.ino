@@ -3,19 +3,35 @@
 #include "ledMatrix.h"
 #include "buttons.h"
 
-#define HAVE_SERIAL
+#if defined(__AVR_ATtiny85__) || defined(__AVR_ATtiny45__) || defined(__AVR_ATtiny25__)
+	#define ARDUINO_TINY
+#elif defined(__AVR_MEGA__)
+	#define ARDUINO_UNO
+    #define HAVE_SERIAL
+#endif
 
-#define DS_SDA A4
-#define DS_SCL A5
-#define DS_SQW A3
+#ifdef ARDUINO_UNO
+    #define DS_SDA A4
+    #define DS_SCL A5
+    // #define DS_SQW A3
 
-#define BUTTONS_PIN  A0
+    #define BUTTONS_PIN  A0
 
-#define MATRIX_CLK A2
-#define MATRIX_CS  A1
-// #define MATRIX_DIN A4
-// #define MATRIX_DIN A5
-#define MATRIX_DIN 7
+    #define MATRIX_CLK A2
+    #define MATRIX_CS  A1
+    #define MATRIX_DIN A4
+    //#define MATRIX_DIN 7
+#else
+    #define DS_SDA 0 // pin 5
+    #define DS_SCL 2 // pin 7
+    // #define DS_SQW A3 TODO
+
+    #define BUTTONS_PIN 3 // pin 2
+
+    #define MATRIX_CLK 1 // pin 6
+    #define MATRIX_CS  4 // pin 3
+    #define MATRIX_DIN 0 // pin 5
+#endif
 
 DS3231 rtc;
 
@@ -35,6 +51,7 @@ void setup() {
     /* DS3231 outputs nothing but continues counting when on battery */
     rtc.setControl(0b00000000 , 0b00000000);
 
+#ifdef ARDUINO_UNO
     // initialize external interrupt on button pin A0 (PCINT8)
     PCMSK1 |= (1 << PCINT8);
     PCICR  |= 1 << PCIE1;
@@ -45,6 +62,19 @@ void setup() {
     TCCR1C = 0;
     TIMSK1 = 1 << OCIE1A;
     OCR1A = 15625;
+#else // ARDUINO_TINY
+    PCMSK |= (1 << PCINT3);
+    GIMSK |= 1 << PCIE;
+
+	// set Clock to 1MHz instead of 8
+	cli(); CLKPR=0x80 ; CLKPR=0x03; sei();
+
+    TCCR1 = (1 << CTC1) | (1 << PWM1A) | (1 << COM1A0) | 0xF; // reset on OCR1A match | prescale 16384
+    OCR1A = 30; // interrupt before counter reset
+    OCR1C = 61; // -> ~1s
+    GTCCR = 0;
+    TIMSK = 1 << OCIE1A;
+#endif
 
 #ifdef HAVE_SERIAL
     Serial.println("Setup OK");
@@ -333,11 +363,23 @@ void loop() {
 
     if (buttonChange) {
         buttonChange = 0;
-        unsigned int timer2 = TCNT1 + 1562;
-        if (timer2 > 15625) {
-            timer2 -= 15625;
+#ifdef ARDUINO_UNO
+        byte timer1 = TCNT1 + 1562;
+        if (timer1 > 15625) {
+            timer1 -= 15625;
+            while(TCNT1 < timer1); // wait for counter loop
         }
-        while(TCNT1 < timer2); // wait 1562 ticks = 100ms
+        while(TCNT1 < timer1); // wait 1562 ticks = 100ms
+#else // ARDUINO_TINY
+        byte timer1 = TCNT1;
+        if(timer1 > 61-6) {
+            byte timerLoop = timer1 - (61-6);
+            while(TCNT1 >= timer1 || TCNT1 < timerLoop); // wait for counter loop
+        } else {
+            timer1 += 6;
+        } 
+        while(TCNT1 < timer1); // wait 6 ticks = ~100ms
+#endif
         byte newButton = buttons.read();
         if (newButton != NO_BUTTON_CHANGE) {
             handleButton(newButton);
