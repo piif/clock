@@ -3,16 +3,22 @@
 
 #include <Arduino.h>
 
-#define DEBOUNCE_DELAY 100
+#define DEFAULT_DEBOUNCE_DELAY 100
 #define NO_BUTTON_CHANGE 0xff
 
 class Buttons {
 public:
-    Buttons(byte _input, byte _buttonsNumber, int *_thresholds, int _debounceDelay = DEBOUNCE_DELAY) {
+    Buttons(byte _input, byte _buttonsNumber, int *_thresholds
+#ifndef NO_DEBOUNCE
+        , int _debounceDelay = DEFAULT_DEBOUNCE_DELAY
+#endif
+    ) {
         input = _input;
         buttonsNumber = _buttonsNumber;
         thresholds = _thresholds;
+#ifndef NO_DEBOUNCE
         debounceDelay = _debounceDelay;
+#endif
         pinMode(input, INPUT);
     }
 
@@ -20,6 +26,7 @@ public:
         int v =  analogRead(input);
         byte newButton = decode(v);
         if (newButton != button) {
+#ifndef NO_DEBOUNCE
             if (debounceDelay) {
                 delay(debounceDelay);
                 v =  analogRead(input);
@@ -29,9 +36,12 @@ public:
                     return button;
                 }
             } else {
+#endif
                 button = newButton;
                 return button;
+#ifndef NO_DEBOUNCE
             }
+#endif
         }
         return NO_BUTTON_CHANGE;
     }
@@ -40,7 +50,9 @@ private:
     byte input;
     byte buttonsNumber;
     int *thresholds;
+#ifndef NO_DEBOUNCE
     int debounceDelay;
+#endif
 
     byte button = 0;
 
