@@ -1,8 +1,3 @@
-#include <Arduino.h>
-#include "ds3231.h"
-#include "ledMatrix.h"
-#include "buttons.h"
-
 #if defined(__AVR_ATtiny85__) || defined(__AVR_ATtiny45__) || defined(__AVR_ATtiny25__)
 	#define ARDUINO_TINY
 #elif defined(__AVR_MEGA__)
@@ -10,12 +5,24 @@
     #define HAVE_SERIAL
 #endif
 
+// #define USE_BUTTONS
+
+#include <Arduino.h>
+#include "ds3231.h"
+#include "ledMatrix.h"
+#ifdef USE_BUTTONS
+    #define NO_DEBOUNCE
+    #include "buttons.h"
+#endif
+
 #ifdef ARDUINO_UNO
     #define DS_SDA A4
     #define DS_SCL A5
     // #define DS_SQW A3
 
-    #define BUTTONS_PIN  A0
+    #ifdef USE_BUTTONS
+        #define BUTTONS_PIN  A0
+    #endif
 
     #define MATRIX_CLK A2
     #define MATRIX_CS  A1
@@ -26,11 +33,13 @@
     #define DS_SCL 2 // pin 7
     // #define DS_SQW A3 TODO
 
-    #define BUTTONS_PIN 3 // pin 2
+    #ifdef USE_BUTTONS
+        #define BUTTONS_PIN 5 // pin 1
+    #endif
 
     #define MATRIX_CLK 1 // pin 6
     #define MATRIX_CS  4 // pin 3
-    #define MATRIX_DIN 0 // pin 5
+    #define MATRIX_DIN 3 // pin 2
 #endif
 
 DS3231 rtc;
@@ -40,7 +49,9 @@ LedMatrix ledMatrix = LedMatrix(12, MATRIX_CLK, MATRIX_CS, MATRIX_DIN, intensity
 
 // int buttonThreshold[] = { 600, 450, 300 };  // value wuth 22k / 10k / 10k
 int buttonThreshold[] = { 900, 800, 700 };  // value wuth 56k / 10k / 10k
-Buttons buttons = Buttons(BUTTONS_PIN, 3, buttonThreshold, 0);
+#ifdef USE_BUTTONS
+Buttons buttons = Buttons(BUTTONS_PIN, 3, buttonThreshold);
+#endif
 
 void setup() {
 #ifdef HAVE_SERIAL
@@ -63,13 +74,16 @@ void setup() {
     TIMSK1 = 1 << OCIE1A;
     OCR1A = 15625;
 #else // ARDUINO_TINY
+#ifdef USE_BUTTONS
     PCMSK |= (1 << PCINT3);
     GIMSK |= 1 << PCIE;
+#endif
 
 	// set Clock to 1MHz instead of 8
 	cli(); CLKPR=0x80 ; CLKPR=0x03; sei();
 
-    TCCR1 = (1 << CTC1) | (1 << PWM1A) | (1 << COM1A0) | 0xF; // reset on OCR1A match | prescale 16384
+    TCCR1 = (1 << CTC1) | 0xF; // reset on OCR1A match | prescale 16384
+    // to debug, output on OC1A = out 1 : | (1 << PWM1A) | (1 << COM1A0)
     OCR1A = 30; // interrupt before counter reset
     OCR1C = 61; // -> ~1s
     GTCCR = 0;
@@ -225,6 +239,7 @@ void updateDisplay() {
         ledMatrix.drawString(1, str);
     }
 
+#ifdef USE_BUTTONS
     // debug buttons by displaying a pixel in the corner
     switch (button) {
         case 1:
@@ -237,8 +252,11 @@ void updateDisplay() {
             ledMatrix.drawPixel(4, 7, 1);
         break;
     }
+#endif
     ledMatrix.flush();
+#ifdef USE_BUTTONS
     pinMode(BUTTONS_PIN, INPUT);
+#endif
 }
 
 bool changeValue(byte *value, short delta, short min, short max, bool cycle = 1) {
@@ -348,9 +366,16 @@ void handleButton(byte newButton) {
 volatile bool clockTick = 0;
 volatile bool buttonChange = 0;
 
+#ifdef USE_BUTTONS
+#ifdef ARDUINO_UNO
 ISR(PCINT1_vect) {
+#else
+ISR(PCINT0_vect) {
+#endif
     buttonChange = 1;
 }
+#endif
+
 ISR(TIMER1_COMPA_vect) {
     clockTick = 1;
 }
@@ -380,11 +405,13 @@ void loop() {
         } 
         while(TCNT1 < timer1); // wait 6 ticks = ~100ms
 #endif
+#ifdef USE_BUTTONS
         byte newButton = buttons.read();
         if (newButton != NO_BUTTON_CHANGE) {
             handleButton(newButton);
             needUpdate = 1;
         }
+#endif
     }
     if (clockTick) {
         clockTick = 0;
