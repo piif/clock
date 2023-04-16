@@ -5,7 +5,7 @@
     #define HAVE_SERIAL
 #endif
 
-// #define USE_BUTTONS
+#define USE_BUTTONS
 
 #include <Arduino.h>
 #include "ds3231.h"
@@ -26,8 +26,8 @@
 
     #define MATRIX_CLK A2
     #define MATRIX_CS  A1
-    #define MATRIX_DIN A4
-    //#define MATRIX_DIN 7
+    // #define MATRIX_DIN A4
+    #define MATRIX_DIN 7
 #else
     #define DS_SDA 0 // pin 5
     #define DS_SCL 2 // pin 7
@@ -39,7 +39,8 @@
 
     #define MATRIX_CLK 1 // pin 6
     #define MATRIX_CS  4 // pin 3
-    #define MATRIX_DIN 3 // pin 2
+    // #define MATRIX_DIN 3 // pin 2
+    #define MATRIX_DIN 0 // pin 5
 #endif
 
 DS3231 rtc;
@@ -64,12 +65,14 @@ void setup() {
 
 #ifdef ARDUINO_UNO
     // initialize external interrupt on button pin A0 (PCINT8)
+#ifdef USE_BUTTONS
     PCMSK1 |= (1 << PCINT8);
     PCICR  |= 1 << PCIE1;
+#endif
 
     // timer 1 : WGM 4 = CTC , prescale 3 = /64
     TCCR1A = 0;
-    TCCR1B = (1 << WGM12) | (1 << CS11) |(1 << CS10);
+    TCCR1B = (1 << WGM12) | (1 << CS12) |(1 << CS10);
     TCCR1C = 0;
     TIMSK1 = 1 << OCIE1A;
     OCR1A = 15625;
@@ -107,55 +110,52 @@ char *appendChar(char* dst, char src) {
 }
 
 void displayTime(TimeStruct *time, byte offset, byte maxLen) {
-    char str[9], *ptr = str;
+    byte X = 1;
     byte h12 = time->hours;
     if (h12 > 12) {
         h12 -= 12;
     }
     if (h12 >= 10) {
-        ptr = appendChar(ptr, '0' + h12 / 10);
+        X = ledMatrix.drawChar(X, '1');
     }
-    ptr = appendChar(ptr, '0' + h12 % 10);
-    ptr = appendChar(ptr, ':');
-    ptr = appendChar(ptr, '0' + time->minutes / 10);
-    ptr = appendChar(ptr, '0' + time->minutes % 10);
-    ptr = appendChar(ptr, ':');
-    ptr = appendChar(ptr, '0' + time->seconds / 10);
-    ptr = appendChar(ptr, '0' + time->seconds % 10);
-    ptr = appendChar(ptr, 0);
-    byte len = ledMatrix.stringWidth(str) - 1;
-    ledMatrix.drawString(offset + (maxLen-len)/2, str);
+    X = ledMatrix.drawChar(X, '0' + h12 % 10);
+    X = ledMatrix.drawChar(X, ':');
+    X = ledMatrix.drawChar(X, '0' + time->minutes / 10);
+    X = ledMatrix.drawChar(X, '0' + time->minutes % 10);
+    X = ledMatrix.drawChar(X, ':');
+    X = ledMatrix.drawChar(X, '0' + time->seconds / 10);
+    X = ledMatrix.drawChar(X, '0' + time->seconds % 10);
 
-// #ifdef HAVE_SERIAL
-//     Serial.print(time->hours); Serial.print(':');
-//     Serial.print(time->minutes); Serial.print(':');
-//     Serial.print(time->seconds); Serial.println();
-// #endif
+#ifdef HAVE_SERIAL
+    Serial.print("X = 1 -> "); Serial.println(X);
+    Serial.print(time->hours); Serial.print(':');
+    Serial.print(time->minutes); Serial.print(':');
+    Serial.print(time->seconds); Serial.println();
+#endif
 }
 
 void displayDate(TimeStruct *time, byte offset, byte maxLen) {
-    char str[16], *ptr = str;
-    ptr = appendStr(ptr, shortDays[time->dayOfWeek]);
-    ptr = appendChar(ptr, ' ');
+    byte X = 33;
+    X = ledMatrix.drawString_P(X, (char *)pgm_read_word(&(shortDays[time->dayOfWeek])));
+    X = ledMatrix.drawChar(X, ' ');
     if (time->dayOfMonth >= 10) {
-        ptr = appendChar(ptr, '0' + time->dayOfMonth / 10);
+        X = ledMatrix.drawChar(X, '0' + time->dayOfMonth / 10);
     }
-    ptr = appendChar(ptr, '0' + time->dayOfMonth % 10);
-    ptr = appendChar(ptr, ' ');
-    ptr = appendStr(ptr, shortMonthes[time->month]);
-    ptr = appendStr(ptr, " 20");
-    ptr = appendChar(ptr, '0' + time->year / 10);
-    ptr = appendChar(ptr, '0' + time->year % 10);
-    ptr = appendChar(ptr, 0);
-    byte len = ledMatrix.stringWidth(str) - 1;
-    ledMatrix.drawString(offset + (maxLen-len)/2, str);
+    X = ledMatrix.drawChar(X, '0' + time->dayOfMonth % 10);
+    X = ledMatrix.drawChar(X, ' ');
+    X = ledMatrix.drawString_P(X, (char *)pgm_read_word(&(shortMonthes[time->month])));
+    X = ledMatrix.drawString(X, " 20");
+    X = ledMatrix.drawChar(X, '0' + time->year / 10);
+    X = ledMatrix.drawChar(X, '0' + time->year % 10);
+    // byte len = ledMatrix.stringWidth(str) - 1;
+    // ledMatrix.drawString(offset + (maxLen-len)/2, str);
 
-// #ifdef HAVE_SERIAL
-//     Serial.print(shortDays[time->dayOfWeek]); Serial.print(' ');
-//     Serial.print(time->dayOfMonth); Serial.print(' ');
-//     Serial.print(shortMonthes[time->month]); Serial.print(' ');
-//     Serial.print(time->year); Serial.print(' ');
-// #endif
+#ifdef HAVE_SERIAL
+    Serial.print(time->dayOfWeek); Serial.print(',');
+    Serial.print(time->dayOfMonth); Serial.print('/');
+    Serial.print(time->month); Serial.print('/');
+    Serial.println(time->year);
+#endif
 }
 
 #define ST_DISPLAY         0
@@ -171,21 +171,28 @@ void displayDate(TimeStruct *time, byte offset, byte maxLen) {
 
 byte state = ST_DISPLAY;
 
-char *prompts[] = {
-    " : ",
-    "annee",
-    "mois",
-    "jour semaine",
-    "jour",
-    "heure",
-    "minute",
-    "seconde"
+const char prompt1[] PROGMEM = "annee";
+const char prompt2[] PROGMEM = "mois";
+const char prompt3[] PROGMEM = "jour semaine";
+const char prompt4[] PROGMEM = "jour";
+const char prompt5[] PROGMEM = "heure";
+const char prompt6[] PROGMEM = "minute";
+const char prompt7[] PROGMEM = "seconde";
+
+const char * const prompts[] PROGMEM = {
+    prompt1,
+    prompt2,
+    prompt3,
+    prompt4,
+    prompt5,
+    prompt6,
+    prompt7
 };
 
 byte button = 0;
 
 void updateDisplay() {
-    TimeStruct time;
+    static TimeStruct time; // put static to avoid dynamic allocation of structure
     rtc.getTime(&time);
     toLocal(&time);
 
@@ -195,26 +202,28 @@ void updateDisplay() {
         displayTime(&time, 0, 32);
         displayDate(&time, 32, 64);
     } else {
-        char str[16], *ptr = str;
-        ptr = appendStr(ptr, prompts[state]);
-        ptr = appendStr(ptr, prompts[0]);
-        ptr = appendChar(ptr, 0);
-        ledMatrix.drawString(33, str);
+        const char * const prompt = (char *)pgm_read_word(&(prompts[state-1]));
+        byte X = 33;
+        X = ledMatrix.drawString_P(X, prompt);
+        X = ledMatrix.drawChar(X, ' ');
+        X = ledMatrix.drawChar(X, ':');
+        X = ledMatrix.drawChar(X, ' ');
 
-        ptr = str;
+        X = 1;
         if (state == ST_SET_YEAR) {
-            ptr = appendStr(ptr, "20");
-            ptr = appendChar(ptr, '0' + time.year / 10);
-            ptr = appendChar(ptr, '0' + time.year % 10);
+            X = ledMatrix.drawChar(X, '2');
+            X = ledMatrix.drawChar(X, '0');
+            X = ledMatrix.drawChar(X, '0' + time.year / 10);
+            X = ledMatrix.drawChar(X, '0' + time.year % 10);
         } else if (state == ST_SET_MONTH) {
-            ptr = appendStr(ptr, shortMonthes[time.month]);
+            X = ledMatrix.drawString_P(X, (char *)pgm_read_word(&(shortMonthes[time.month])));
         } else if (state == ST_SET_DAY_OF_WEEK) {
-            ptr = appendStr(ptr, shortDays[time.dayOfWeek]);
+            X = ledMatrix.drawString_P(X, (char *)pgm_read_word(&(shortDays[time.dayOfWeek])));
         } else if (state == ST_SET_DAY) {
             if (time.dayOfMonth >= 10) {
-                ptr = appendChar(ptr, '0' + time.dayOfMonth / 10);
+                X = ledMatrix.drawChar(X, '0' + time.dayOfMonth / 10);
             }
-            ptr = appendChar(ptr, '0' + time.dayOfMonth % 10);
+            X = ledMatrix.drawChar(X, '0' + time.dayOfMonth % 10);
         } else if (state == ST_SET_HOUR) {
             byte h12 = time.hours;
             char suffix = 'a';
@@ -223,20 +232,18 @@ void updateDisplay() {
                 suffix = 'p';
             }
             if (h12 >= 10) {
-                ptr = appendChar(ptr, '0' + h12 / 10);
+                X = ledMatrix.drawChar(X, '0' + h12 / 10);
             }
-            ptr = appendChar(ptr, '0' + h12 % 10);
-            ptr = appendChar(ptr, suffix);
-            ptr = appendChar(ptr, 'm');
+            X = ledMatrix.drawChar(X, '0' + h12 % 10);
+            X = ledMatrix.drawChar(X, suffix);
+            X = ledMatrix.drawChar(X, 'm');
         } else if (state == ST_SET_MINUTES) {
-            ptr = appendChar(ptr, '0' + time.minutes / 10);
-            ptr = appendChar(ptr, '0' + time.minutes % 10);
+            X = ledMatrix.drawChar(X, '0' + time.minutes / 10);
+            X = ledMatrix.drawChar(X, '0' + time.minutes % 10);
         } else if (state == ST_SET_SECONDS) {
-            ptr = appendChar(ptr, '0' + time.seconds / 10);
-            ptr = appendChar(ptr, '0' + time.seconds % 10);
+            X = ledMatrix.drawChar(X, '0' + time.seconds / 10);
+            X = ledMatrix.drawChar(X, '0' + time.seconds % 10);
         }
-        ptr = appendChar(ptr, 0);
-        ledMatrix.drawString(1, str);
     }
 
 #ifdef USE_BUTTONS
@@ -389,11 +396,13 @@ void loop() {
     if (buttonChange) {
         buttonChange = 0;
 #ifdef ARDUINO_UNO
-        byte timer1 = TCNT1 + 1562;
-        if (timer1 > 15625) {
-            timer1 -= 15625;
-            while(TCNT1 < timer1); // wait for counter loop
-        }
+        byte timer1 = TCNT1;
+        if (timer1 > 15625-1562) {
+             byte timerLoop = timer1 - (15625-1562);
+            while(TCNT1 >= timer1 || TCNT1 < timerLoop); // wait for counter loop
+        } else {
+            timer1 += 1562;
+        } 
         while(TCNT1 < timer1); // wait 1562 ticks = 100ms
 #else // ARDUINO_TINY
         byte timer1 = TCNT1;

@@ -1,13 +1,13 @@
 # FOR UNO
-#BOARD := arduino:avr:uno
-#LIBRARY_PATH := ../ArduinoLibs
+BOARD := arduino:avr:uno
+LIBRARY_PATH := ../ArduinoLibs
 
 # FOR TINY
-BOARD := attiny:avr:ATtinyX5:cpu=attiny85,clock=internal8
-LIBRARY_PATH := ../ArduinoLibs ../../adafruits
+#BOARD := attiny:avr:ATtinyX5:cpu=attiny85,clock=internal8
+#LIBRARY_PATH := ../ArduinoLibs ../../adafruits
 
 ARDDUDE_OPTIONS := -l cr -o raw -d
 PORT := /dev/ttyUSB0
 
 ARDUINO_CLI_UPLOAD_OPTS=-v
-# ARDUINO_CLI_COMPILE_OPTS=-v
+ARDUINO_CLI_COMPILE_OPTS=--build-property "build.extra_flags=-DREDUCED_MAP"
