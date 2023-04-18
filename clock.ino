@@ -6,6 +6,7 @@
 #endif
 
 #define USE_BUTTONS
+// #define DEBUG_BUTTONS
 
 #include <Arduino.h>
 #include "ds3231.h"
@@ -26,15 +27,15 @@
 
     #define MATRIX_CLK A2
     #define MATRIX_CS  A1
-    // #define MATRIX_DIN A4
-    #define MATRIX_DIN 7
+    #define MATRIX_DIN A4
+    // #define MATRIX_DIN 7
 #else
     #define DS_SDA 0 // pin 5
     #define DS_SCL 2 // pin 7
     // #define DS_SQW A3 TODO
 
     #ifdef USE_BUTTONS
-        #define BUTTONS_PIN 5 // pin 1
+        #define BUTTONS_PIN 3 // pin 1
     #endif
 
     #define MATRIX_CLK 1 // pin 6
@@ -48,8 +49,8 @@ DS3231 rtc;
 byte intensity = 3;
 LedMatrix ledMatrix = LedMatrix(12, MATRIX_CLK, MATRIX_CS, MATRIX_DIN, intensity);
 
-// int buttonThreshold[] = { 600, 450, 300 };  // value wuth 22k / 10k / 10k
-int buttonThreshold[] = { 900, 800, 700 };  // value wuth 56k / 10k / 10k
+// int buttonThreshold[] = { 600, 450, 300 };  // value with 22k / 10k / 10k
+int buttonThreshold[] = { 900, 800, 700 };  // value with 56k / 10k / 10k
 #ifdef USE_BUTTONS
 Buttons buttons = Buttons(BUTTONS_PIN, 3, buttonThreshold);
 #endif
@@ -94,19 +95,8 @@ void setup() {
 #endif
 
 #ifdef HAVE_SERIAL
-    Serial.println("Setup OK");
+    Serial.println(F("Setup OK"));
 #endif
-}
-
-char *appendStr(char* dst, char* src) {
-    while (*src) {
-        *dst++ = *src++;
-    }
-    return dst;
-}
-char *appendChar(char* dst, char src) {
-    *dst++ = src;
-    return dst;
 }
 
 void displayTime(TimeStruct *time, byte offset, byte maxLen) {
@@ -127,7 +117,7 @@ void displayTime(TimeStruct *time, byte offset, byte maxLen) {
     X = ledMatrix.drawChar(X, '0' + time->seconds % 10);
 
 #ifdef HAVE_SERIAL
-    Serial.print("X = 1 -> "); Serial.println(X);
+    Serial.print(F("X = 1 -> ")); Serial.println(X);
     Serial.print(time->hours); Serial.print(':');
     Serial.print(time->minutes); Serial.print(':');
     Serial.print(time->seconds); Serial.println();
@@ -347,7 +337,7 @@ void handleButton(byte newButton) {
     switch (newButton) {
         case 1: // change state
 #ifdef HAVE_SERIAL
-             Serial.println("next state");
+             Serial.println(F("next state"));
 #endif
             if (state == ST_LAST) {
                 state = ST_DISPLAY;
@@ -357,13 +347,13 @@ void handleButton(byte newButton) {
         break;
         case 2:
 #ifdef HAVE_SERIAL
-             Serial.println("plus");
+             Serial.println(F("plus"));
 #endif
             handleState(1);
         break;
         case 3:
 #ifdef HAVE_SERIAL
-             Serial.println("minus");
+             Serial.println(F("minus"));
 #endif
             handleState(-1);
         break;
@@ -387,10 +377,20 @@ ISR(TIMER1_COMPA_vect) {
     clockTick = 1;
 }
 
-unsigned long counter = 0;
-
 void loop() {
-    counter++;
+#ifdef DEBUG_BUTTONS
+    if (clockTick) {
+        clockTick = 0;
+        int v = analogRead(BUTTONS_PIN);
+        byte X = 33;
+        ledMatrix.clear();
+        X = ledMatrix.drawChar(X, '0' + (v / 1000));
+        X = ledMatrix.drawChar(X, '0' + ((v / 100) % 10));
+        X = ledMatrix.drawChar(X, '0' + ((v / 10) % 10));
+        X = ledMatrix.drawChar(X, '0' + (v % 10));
+        ledMatrix.flush();
+    }
+#else
     bool needUpdate = 0;
 
     if (buttonChange) {
@@ -427,10 +427,7 @@ void loop() {
         needUpdate = 1;
     }
     if (needUpdate) {
-// #ifdef HAVE_SERIAL
-//         Serial.print(counter);
-//         Serial.print(" t "); Serial.print(clockTick); Serial.print(buttonChange); Serial.println(button);
-// #endif
         updateDisplay();
     }
+#endif
 }
