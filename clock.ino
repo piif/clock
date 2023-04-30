@@ -60,7 +60,8 @@ void setup() {
     Serial.begin(115200);
 #endif
 
-    // TODO : use internal counter instead of external tick
+    ledMatrix.inverted = true;
+
     /* DS3231 outputs nothing but continues counting when on battery */
     rtc.setControl(0b00000000 , 0b00000000);
 
@@ -125,7 +126,7 @@ void displayTime(TimeStruct *time, byte offset, byte maxLen) {
 }
 
 void displayDate(TimeStruct *time, byte offset, byte maxLen) {
-    byte X = 33;
+    byte X = 32;
     X = ledMatrix.drawString_P(X, (char *)pgm_read_word(&(shortDays[time->dayOfWeek])));
     X = ledMatrix.drawChar(X, ' ');
     if (time->dayOfMonth >= 10) {
