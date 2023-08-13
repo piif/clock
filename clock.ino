@@ -6,6 +6,11 @@
 // - en // chercher "filtre passe bande" pour calibrer les condo + mettre une diode en sortie de tout sauf la matrice
 // - en // , il faudra un radiateur au 7508, à moins qu'une autre alim suffise
 
+// quand on modifie l'heure, on doit repasser en UTC sinon, au rattrapage ou reset suivant, on fait +1 ou +2
+// + il faudrait caler les rattrapage sur les heures (minute==0) sinon, lors du changement d'heure ça fera n'importe quoi
+
+// voir si c'est mieux avec 2 7805 différents ? (avec la diode entre les 2 et amener 2 +5 séparés dans le montage)
+
 #if defined(__AVR_ATtiny85__) || defined(__AVR_ATtiny45__) || defined(__AVR_ATtiny25__)
 	#define ARDUINO_TINY
 #elif defined(__AVR_MEGA__)
