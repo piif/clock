@@ -7,7 +7,7 @@ BOARD := attiny:avr:ATtinyX5:cpu=attiny85,clock=internal8
 LIBRARY_PATH := ../ArduinoLibs ../../adafruits
 
 ARDDUDE_OPTIONS := -l cr -o raw -d
-PORT := /dev/ttyUSB0
+PORT := /dev/ttyACM0
 
 ARDUINO_CLI_UPLOAD_OPTS=-v
 ARDUINO_CLI_COMPILE_OPTS=--warnings all --build-property "build.extra_flags=-DREDUCED_MAP -DTHIN_FONT"
