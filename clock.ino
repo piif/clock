@@ -119,8 +119,8 @@ void setup() {
 #endif
 }
 
-void displayTime(TimeStruct *time, byte offset, byte maxLen) {
-    byte X = 1;
+void displayTime(TimeStruct *time, byte offset) {
+    byte X = offset;
     byte h12 = time->hours;
     if (h12 > 12) {
         h12 -= 12;
@@ -144,8 +144,8 @@ void displayTime(TimeStruct *time, byte offset, byte maxLen) {
 // #endif
 }
 
-void displayDate(TimeStruct *time, byte offset, byte maxLen) {
-    byte X = 32;
+void displayDate(TimeStruct *time, byte offset) {
+    byte X = offset;
     X = ledMatrix.drawString_P(X, (char *)pgm_read_word(&(shortDays[time->dayOfWeek])));
     X = ledMatrix.drawChar(X, ' ');
     if (time->dayOfMonth >= 10) {
@@ -215,8 +215,8 @@ void updateDisplay() {
     ledMatrix.clear();
 
     if (state == ST_DISPLAY) {
-        displayTime(&time, 0, 32);
-        displayDate(&time, 32, 64);
+        displayTime(&time, 1);
+        displayDate(&time, 32);
     } else {
         const char * const prompt = (char *)pgm_read_word(&(prompts[state-1]));
         byte X = 33;
@@ -305,8 +305,7 @@ bool changeValue(byte *value, short delta, short min, short max, bool cycle = 1)
             (*value)++;
         }
         return 1;
-    }
-    if (delta == -1) {
+    } else {// delta == -1
         if (*value == min) {
             if (!cycle) {
                 return 0;
