@@ -22,6 +22,7 @@
 // #define DEBUG_BUTTONS
 
 #include <Arduino.h>
+#include <avr/eeprom.h>
 #include "ds3231.h"
 #include "ledMatrix.h"
 #ifdef USE_BUTTONS
@@ -72,6 +73,51 @@ int buttonThreshold[] = { 900, 800, 700 };  // value with 56k / 10k / 10k
 Buttons buttons = Buttons(BUTTONS_PIN, 3, buttonThreshold);
 #endif
 
+volatile bool buttonChange = 0;
+byte button = 0;
+
+TimeStruct time; // put static to avoid dynamic allocation of structure
+TimeStruct EEMEM eepromTime; // eeprom location to store time every hour
+
+volatile bool clockTick = 0;
+#ifdef ARDUINO_TINY
+volatile unsigned int subTick=0;
+#endif
+
+#define ST_DISPLAY         0
+#define ST_SET_OFFSET      1
+#define ST_SET_YEAR        2
+#define ST_SET_MONTH       3
+#define ST_SET_DAY_OF_WEEK 4
+#define ST_SET_DAY         5
+#define ST_SET_HOUR        6
+#define ST_SET_MINUTES     7
+#define ST_SET_SECONDS     8
+
+#define ST_LAST            8
+
+byte state = ST_DISPLAY;
+
+const char prompt1[] PROGMEM = "offset";
+const char prompt2[] PROGMEM = "annee";
+const char prompt3[] PROGMEM = "mois";
+const char prompt4[] PROGMEM = "jour semaine";
+const char prompt5[] PROGMEM = "jour";
+const char prompt6[] PROGMEM = "heure";
+const char prompt7[] PROGMEM = "minute";
+const char prompt8[] PROGMEM = "seconde";
+
+const char * const prompts[] PROGMEM = {
+    prompt1,
+    prompt2,
+    prompt3,
+    prompt4,
+    prompt5,
+    prompt6,
+    prompt7,
+    prompt8
+};
+
 void setup() {
 #ifdef HAVE_SERIAL
     Serial.begin(115200);
@@ -113,6 +159,29 @@ void setup() {
 #endif
 
     updateTimeFromRtc();
+    if (time.year == 0) {
+        // RTC has reset -> try to get values from eeprom
+#ifdef HAVE_SERIAL
+        Serial.println(F("read eeprom"));
+#endif
+        eeprom_read_block(&time, &eepromTime, sizeof(time));
+        if (time.year == 0xFF) {
+            // eeprom is empty -> cancel and get RTC value again
+#ifdef HAVE_SERIAL
+            Serial.println(F("eeprom empty"));
+#endif
+            updateTimeFromRtc();
+            eeprom_update_block(&time, &eepromTime, sizeof(time));
+        } else {
+            // write back to RTC
+            rtc.setTime(&time);
+        }
+    } else {
+#ifdef HAVE_SERIAL
+        Serial.println(F("update eeprom"));
+#endif
+        eeprom_update_block(&time, &eepromTime, sizeof(time));
+    }
 
 #ifdef HAVE_SERIAL
     Serial.println(F("Setup OK"));
@@ -167,44 +236,6 @@ void displayDate(TimeStruct *time, byte offset) {
 //     Serial.println(time->year);
 // #endif
 }
-
-#define ST_DISPLAY         0
-#define ST_SET_OFFSET      1
-#define ST_SET_YEAR        2
-#define ST_SET_MONTH       3
-#define ST_SET_DAY_OF_WEEK 4
-#define ST_SET_DAY         5
-#define ST_SET_HOUR        6
-#define ST_SET_MINUTES     7
-#define ST_SET_SECONDS     8
-
-#define ST_LAST            8
-
-byte state = ST_DISPLAY;
-
-const char prompt1[] PROGMEM = "offset";
-const char prompt2[] PROGMEM = "annee";
-const char prompt3[] PROGMEM = "mois";
-const char prompt4[] PROGMEM = "jour semaine";
-const char prompt5[] PROGMEM = "jour";
-const char prompt6[] PROGMEM = "heure";
-const char prompt7[] PROGMEM = "minute";
-const char prompt8[] PROGMEM = "seconde";
-
-const char * const prompts[] PROGMEM = {
-    prompt1,
-    prompt2,
-    prompt3,
-    prompt4,
-    prompt5,
-    prompt6,
-    prompt7,
-    prompt8
-};
-
-byte button = 0;
-
-TimeStruct time; // put static to avoid dynamic allocation of structure
 
 void updateTimeFromRtc() {
     rtc.getTime(&time);
@@ -408,13 +439,6 @@ void handleButton(byte newButton) {
     }
 }
 
-volatile bool clockTick = 0;
-#ifdef ARDUINO_TINY
-volatile unsigned int subTick=0;
-#endif
-
-volatile bool buttonChange = 0;
-
 #ifdef USE_BUTTONS
 #ifdef ARDUINO_UNO
 ISR(PCINT1_vect) {
@@ -494,20 +518,28 @@ void loop() {
     }
     if (clockTick) {
         clockTick = 0;
-        if (incrementSecond(&time) >= 2) {
+        byte changes = incrementSecond(&time);
+        if (changes >= 2) {
             // on minute change, update to fix internal clock drift
 #ifdef HAVE_SERIAL
-            Serial.print("BEFORE : ");
+            Serial.print(F("BEFORE : "));
             printTime(&time);
 #endif
             updateTimeFromRtc();
 #ifdef HAVE_SERIAL
-            Serial.print("AFTER : ");
+            Serial.print(F("AFTER : "));
             printTime(&time);
 #endif
         }
+        if (changes >= 3) {
+            // update eeprom every hour
 #ifdef HAVE_SERIAL
-        // printTime(&time);
+            Serial.print(F("update eeprom"));
+#endif
+            eeprom_update_block(&time, &eepromTime, sizeof(time));
+        }
+#ifdef HAVE_SERIAL
+        printTime(&time);
 #endif
         needUpdate = 1;
     }
