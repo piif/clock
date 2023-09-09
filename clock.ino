@@ -107,7 +107,7 @@ void setup() {
     TCCR1 = (1 << CTC1) | 0x7; // reset on OCR1A match | prescale 64
     // to debug, output on OC1A = out 1 : | (1 << PWM1A) | (1 << COM1A0)
     OCR1A = 30; // interrupt before counter reset
-    OCR1C = 125; // 1/125s
+    OCR1C = 128; // 125ms should be 125 but ATtiny internal clock doesn't seem to be exact
     GTCCR = 0;
     TIMSK = 1 << OCIE1A;
 #endif
@@ -350,7 +350,23 @@ void handleState(short delta) {
         }
     } else if (state == ST_SET_HOUR) {
         if (changeValue(&(time.hours), delta, 0, 23)) {
-            rtc.registerWrite(DS3231_REG_Hours, rtc.decToBcd(time.hours));
+            TimeStruct utcTime = time;
+            byte changes = fromLocal(&utcTime);
+            switch (changes) {
+                case 6:
+                    rtc.registerWrite(DS3231_REG_Year, rtc.decToBcd(utcTime.year));
+                    [[fallthrough]];
+                case 5:
+                    rtc.registerWrite(DS3231_REG_Month, rtc.decToBcd(utcTime.month));
+                    [[fallthrough]];
+                case 4:
+                    rtc.registerWrite(DS3231_REG_Date, rtc.decToBcd(utcTime.dayOfMonth));
+                    rtc.registerWrite(DS3231_REG_Day, utcTime.dayOfWeek);
+                    [[fallthrough]];
+                default:
+                    rtc.registerWrite(DS3231_REG_Hours, rtc.decToBcd(utcTime.hours));
+                    [[fallthrough]];
+            }
         }
     } else if (state == ST_SET_MINUTES) {
         if (changeValue(&(time.minutes), delta, 0, 59)) {
@@ -393,7 +409,9 @@ void handleButton(byte newButton) {
 }
 
 volatile bool clockTick = 0;
-volatile unsigned long clockCount = 0; // count ticks
+#ifdef ARDUINO_TINY
+volatile unsigned int subTick=0;
+#endif
 
 volatile bool buttonChange = 0;
 
@@ -407,16 +425,11 @@ ISR(PCINT0_vect) {
 }
 #endif
 
-#ifdef ARDUINO_TINY
-byte subTick=0;
-#endif
-
 ISR(TIMER1_COMPA_vect) {
 #ifdef ARDUINO_TINY
-    if (subTick==125) {
+    if (subTick==125-1) {
         subTick=0;
         clockTick = 1;
-        clockCount++;
     } else {
         subTick++;
     }
@@ -481,24 +494,21 @@ void loop() {
     }
     if (clockTick) {
         clockTick = 0;
-//         if(clockCount >= 1200) {
-// #ifdef HAVE_SERIAL
-//             Serial.print("BEFORE : ");
-//             printTime(&time);
-// #endif
-//             // read RTC time every 20 minutes (correct 1MHz tiny shifting 1s/30min)
-//             updateTimeFromRtc();
-// #ifdef HAVE_SERIAL
-//             Serial.print("AFTER : ");
-//             printTime(&time);
-// #endif
-//             clockCount=0;
-//         } else {
-            incrementSecond(&time);
+        if (incrementSecond(&time) >= 2) {
+            // on minute change, update to fix internal clock drift
 #ifdef HAVE_SERIAL
+            Serial.print("BEFORE : ");
             printTime(&time);
 #endif
-        // }
+            updateTimeFromRtc();
+#ifdef HAVE_SERIAL
+            Serial.print("AFTER : ");
+            printTime(&time);
+#endif
+        }
+#ifdef HAVE_SERIAL
+        // printTime(&time);
+#endif
         needUpdate = 1;
     }
     if (needUpdate) {
